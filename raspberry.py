@@ -254,14 +254,46 @@ TRANG_WEB = """
       background: #1a1a2e;
       color: white;
       min-height: 100vh;
-      padding: 20px;
+      padding-bottom: 30px;
     }
-    h1 {
-      text-align: center;
+
+    /* ===== NAVBAR ===== */
+    .navbar {
+      background: #0f0f23;
+      border-bottom: 2px solid #4CAF50;
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .navbar-title {
       color: #4CAF50;
-      font-size: 1.4rem;
-      margin-bottom: 20px;
+      font-size: 1rem;
+      font-weight: bold;
+      flex: 1;
+      padding: 14px 0;
     }
+    .nav-tabs { display: flex; }
+    .nav-tab {
+      padding: 14px 18px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: bold;
+      color: #aaa;
+      border-bottom: 3px solid transparent;
+      transition: all 0.2s;
+      user-select: none;
+    }
+    .nav-tab.active { color: #4CAF50; border-bottom-color: #4CAF50; }
+    .nav-tab:hover { color: white; }
+
+    /* ===== SCREENS ===== */
+    .screen { display: none; padding: 20px; }
+    .screen.active { display: block; }
+
+    /* ===== TRANG CHỦ ===== */
     .camera-box {
       width: 100%;
       max-width: 640px;
@@ -282,9 +314,9 @@ TRANG_WEB = """
       pointer-events: none;
     }
     @keyframes pulse {
-      0%   { border-color: red; box-shadow: 0 0 10px red; }
+      0%   { border-color: red;    box-shadow: 0 0 10px red; }
       50%  { border-color: #ff6600; box-shadow: 0 0 25px #ff6600; }
-      100% { border-color: red; box-shadow: 0 0 10px red; }
+      100% { border-color: red;    box-shadow: 0 0 10px red; }
     }
     .result-box {
       background: #16213e;
@@ -303,12 +335,7 @@ TRANG_WEB = """
       margin-top: 10px;
       transition: width 0.3s;
     }
-
-    /* ---- Nút SCAN ---- */
-    .btn-scan-wrap {
-      max-width: 640px;
-      margin: 0 auto 16px;
-    }
+    .btn-scan-wrap { max-width: 640px; margin: 0 auto 16px; }
     .btn-scan {
       width: 100%;
       padding: 18px;
@@ -327,12 +354,10 @@ TRANG_WEB = """
       animation: scanPulse 1.2s infinite;
     }
     @keyframes scanPulse {
-      0%   { transform: scale(1);    box-shadow: 0 0 0 rgba(244,67,54,0.4); }
-      50%  { transform: scale(1.02); box-shadow: 0 0 20px rgba(244,67,54,0.6); }
-      100% { transform: scale(1);    box-shadow: 0 0 0 rgba(244,67,54,0.4); }
+      0%   { transform: scale(1);    box-shadow: 0 0 0 rgba(244,67,54,.4); }
+      50%  { transform: scale(1.02); box-shadow: 0 0 20px rgba(244,67,54,.6); }
+      100% { transform: scale(1);    box-shadow: 0 0 0 rgba(244,67,54,.4); }
     }
-    .btn-scan:disabled { opacity: 0.6; cursor: not-allowed; }
-
     .btn-grid {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
@@ -353,7 +378,7 @@ TRANG_WEB = """
     .btn2 { background: #2196F3; }
     .btn3 { background: #FF9800; }
     .btn:active { opacity: 0.7; }
-    .label-manual {
+    .label-section {
       max-width: 640px;
       margin: 16px auto 8px;
       font-size: 0.85rem;
@@ -377,54 +402,257 @@ TRANG_WEB = """
       display: none;
       font-weight: bold;
     }
+
+    /* ===== CẤU HÌNH ===== */
+    .cfg-wrap { max-width: 640px; margin: 0 auto; }
+    .cfg-section {
+      background: #16213e;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .cfg-section-title {
+      font-size: 0.95rem;
+      font-weight: bold;
+      color: #4CAF50;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .cmd-row {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      margin-bottom: 10px;
+    }
+    .cmd-row:last-child { margin-bottom: 0; }
+    .cmd-label {
+      font-size: 0.75rem;
+      color: #aaa;
+      min-width: 90px;
+      padding-top: 10px;
+      flex-shrink: 0;
+    }
+    .cmd-textarea {
+      flex: 1;
+      background: #0f0f23;
+      border: 1px solid #333;
+      border-radius: 8px;
+      color: #7ec8e3;
+      font-family: monospace;
+      font-size: 0.82rem;
+      padding: 8px 10px;
+      resize: vertical;
+      min-height: 38px;
+      line-height: 1.4;
+      transition: border-color 0.2s;
+    }
+    .cmd-textarea:focus { outline: none; border-color: #4CAF50; }
+    .cmd-textarea.error { border-color: #f44336; }
+    .btn-send {
+      background: #4CAF50;
+      border: none;
+      border-radius: 8px;
+      color: white;
+      font-size: 0.8rem;
+      font-weight: bold;
+      padding: 8px 14px;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      align-self: flex-start;
+      margin-top: 2px;
+      transition: background 0.2s;
+    }
+    .btn-send:hover { background: #43a047; }
+    .btn-send:active { background: #388e3c; }
+    .btn-send.sending { background: #FF9800; }
+
+    /* Custom editor */
+    .custom-editor .cmd-textarea {
+      min-height: 70px;
+      color: #fff;
+      font-size: 0.88rem;
+    }
+    .cfg-log {
+      background: #0f0f23;
+      border-radius: 8px;
+      padding: 10px;
+      font-family: monospace;
+      font-size: 0.78rem;
+      color: #aaa;
+      max-height: 160px;
+      overflow-y: auto;
+      margin-top: 10px;
+    }
+    .cfg-log .log-ok   { color: #4CAF50; }
+    .cfg-log .log-err  { color: #f44336; }
+    .cfg-log .log-sent { color: #7ec8e3; }
   </style>
 </head>
 <body>
-  <h1>🗑️ Thùng Rác Thông Minh</h1>
 
-  <!-- Khung camera live -->
-  <div class="camera-box">
-    <img src="/camera_live" alt="Camera">
-    <div class="scan-overlay" id="scan-overlay"></div>
+  <!-- NAVBAR -->
+  <nav class="navbar">
+    <div class="navbar-title">🗑️ Thùng Rác Thông Minh</div>
+    <div class="nav-tabs">
+      <div class="nav-tab active" id="tab-home" onclick="switchTab('home')">Trang Chủ</div>
+      <div class="nav-tab"        id="tab-cfg"  onclick="switchTab('cfg')">⚙️ Cấu Hình</div>
+    </div>
+  </nav>
+
+  <!-- ============ TRANG CHỦ ============ -->
+  <div class="screen active" id="screen-home">
+
+    <!-- Khung camera live -->
+    <div class="camera-box">
+      <img src="/camera_live" alt="Camera">
+      <div class="scan-overlay" id="scan-overlay"></div>
+    </div>
+
+    <!-- Kết quả AI -->
+    <div class="result-box">
+      <div class="ket-qua" id="ten-rac">Đang nhận diện...</div>
+      <div class="do-tin-cay" id="phan-tram">--</div>
+      <div class="thanh-phan" id="thanh" style="width:0%"></div>
+    </div>
+
+    <!-- Thông báo -->
+    <div id="thong-bao"></div>
+
+    <!-- NÚT SCAN CHÍNH -->
+    <div class="btn-scan-wrap">
+      <button class="btn-scan" id="btn-scan" onclick="toggleScan()">
+        📷 Bắt Đầu Quét Rác
+      </button>
+    </div>
+
+    <!-- Nút mở thủ công -->
+    <div class="label-section">— Hoặc mở thủ công —</div>
+    <div class="btn-grid">
+      <button class="btn btn1" onclick="moThuCong(1)">🌿 Hữu Cơ<br>Thùng 1</button>
+      <button class="btn btn2" onclick="moThuCong(2)">🧴 Nhựa<br>Thùng 2</button>
+      <button class="btn btn3" onclick="moThuCong(3)">♻️ Tái Chế<br>Thùng 3</button>
+    </div>
+
+    <div class="trang-thai" id="trang-thai">🟢 Hệ thống đang hoạt động</div>
   </div>
 
-  <!-- Kết quả AI -->
-  <div class="result-box">
-    <div class="ket-qua" id="ten-rac">Đang nhận diện...</div>
-    <div class="do-tin-cay" id="phan-tram">--</div>
-    <div class="thanh-phan" id="thanh" style="width:0%"></div>
-  </div>
+  <!-- ============ CẤU HÌNH ============ -->
+  <div class="screen" id="screen-cfg">
+    <div class="cfg-wrap">
 
-  <!-- Thông báo -->
-  <div id="thong-bao"></div>
+      <!-- Scan -->
+      <div class="cfg-section">
+        <div class="cfg-section-title">💡 Scan / LED</div>
+        <div class="cmd-row">
+          <span class="cmd-label">Bắt đầu quét</span>
+          <textarea class="cmd-textarea" id="cmd-scan-start">{"cmd": "scan_start"}</textarea>
+          <button class="btn-send" onclick="guiLenh('cmd-scan-start')">Gửi</button>
+        </div>
+        <div class="cmd-row">
+          <span class="cmd-label">Kết thúc quét</span>
+          <textarea class="cmd-textarea" id="cmd-scan-end">{"cmd": "scan_end"}</textarea>
+          <button class="btn-send" onclick="guiLenh('cmd-scan-end')">Gửi</button>
+        </div>
+        <div class="cmd-row">
+          <span class="cmd-label">Beep</span>
+          <textarea class="cmd-textarea" id="cmd-beep">{"cmd": "beep"}</textarea>
+          <button class="btn-send" onclick="guiLenh('cmd-beep')">Gửi</button>
+        </div>
+      </div>
 
-  <!-- NÚT SCAN CHÍNH -->
-  <div class="btn-scan-wrap">
-    <button class="btn-scan" id="btn-scan" onclick="toggleScan()">
-      📷 Bắt Đầu Quét Rác
-    </button>
-  </div>
+      <!-- Mở thùng -->
+      <div class="cfg-section">
+        <div class="cfg-section-title">🗑️ Mở Thùng</div>
+        <div class="cmd-row">
+          <span class="cmd-label">Thùng 1</span>
+          <textarea class="cmd-textarea" id="cmd-open-1">{"cmd": "open_bin", "bin": 1}</textarea>
+          <button class="btn-send" onclick="guiLenh('cmd-open-1')">Gửi</button>
+        </div>
+        <div class="cmd-row">
+          <span class="cmd-label">Thùng 2</span>
+          <textarea class="cmd-textarea" id="cmd-open-2">{"cmd": "open_bin", "bin": 2}</textarea>
+          <button class="btn-send" onclick="guiLenh('cmd-open-2')">Gửi</button>
+        </div>
+        <div class="cmd-row">
+          <span class="cmd-label">Thùng 3</span>
+          <textarea class="cmd-textarea" id="cmd-open-3">{"cmd": "open_bin", "bin": 3}</textarea>
+          <button class="btn-send" onclick="guiLenh('cmd-open-3')">Gửi</button>
+        </div>
+      </div>
 
-  <!-- Nút mở thủ công -->
-  <div class="label-manual">— Hoặc mở thủ công —</div>
-  <div class="btn-grid">
-    <button class="btn btn1" onclick="moThuCong(1)">🌿 Hữu Cơ<br>Thùng 1</button>
-    <button class="btn btn2" onclick="moThuCong(2)">🧴 Nhựa<br>Thùng 2</button>
-    <button class="btn btn3" onclick="moThuCong(3)">♻️ Tái Chế<br>Thùng 3</button>
-  </div>
+      <!-- Cài góc servo -->
+      <div class="cfg-section">
+        <div class="cfg-section-title">🔧 Chỉnh Góc Servo (open / close)</div>
+        <div class="cmd-row">
+          <span class="cmd-label">Thùng 1</span>
+          <textarea class="cmd-textarea" id="cmd-angle-1">{"cmd": "set", "bin": 1, "open": 120, "close": 5}</textarea>
+          <button class="btn-send" onclick="guiLenh('cmd-angle-1')">Gửi</button>
+        </div>
+        <div class="cmd-row">
+          <span class="cmd-label">Thùng 2</span>
+          <textarea class="cmd-textarea" id="cmd-angle-2">{"cmd": "set", "bin": 2, "open": 120, "close": 5}</textarea>
+          <button class="btn-send" onclick="guiLenh('cmd-angle-2')">Gửi</button>
+        </div>
+        <div class="cmd-row">
+          <span class="cmd-label">Thùng 3</span>
+          <textarea class="cmd-textarea" id="cmd-angle-3">{"cmd": "set", "bin": 3, "open": 120, "close": 5}</textarea>
+          <button class="btn-send" onclick="guiLenh('cmd-angle-3')">Gửi</button>
+        </div>
+      </div>
 
-  <div class="trang-thai" id="trang-thai">🟢 Hệ thống đang hoạt động</div>
+      <!-- Cài thời gian -->
+      <div class="cfg-section">
+        <div class="cfg-section-title">⏱️ Chỉnh Thời Gian Mở (ms)</div>
+        <div class="cmd-row">
+          <span class="cmd-label">Thùng 1</span>
+          <textarea class="cmd-textarea" id="cmd-time-1">{"cmd": "set", "bin": 1, "time": 4000}</textarea>
+          <button class="btn-send" onclick="guiLenh('cmd-time-1')">Gửi</button>
+        </div>
+        <div class="cmd-row">
+          <span class="cmd-label">Thùng 2</span>
+          <textarea class="cmd-textarea" id="cmd-time-2">{"cmd": "set", "bin": 2, "time": 4000}</textarea>
+          <button class="btn-send" onclick="guiLenh('cmd-time-2')">Gửi</button>
+        </div>
+        <div class="cmd-row">
+          <span class="cmd-label">Thùng 3</span>
+          <textarea class="cmd-textarea" id="cmd-time-3">{"cmd": "set", "bin": 3, "time": 4000}</textarea>
+          <button class="btn-send" onclick="guiLenh('cmd-time-3')">Gửi</button>
+        </div>
+      </div>
+
+      <!-- Custom command -->
+      <div class="cfg-section custom-editor">
+        <div class="cfg-section-title">✏️ Lệnh Tuỳ Chỉnh</div>
+        <div class="cmd-row">
+          <textarea class="cmd-textarea" id="cmd-custom" placeholder='Nhập JSON, VD: {"cmd": "beep"}'></textarea>
+          <button class="btn-send" onclick="guiLenh('cmd-custom')">Gửi</button>
+        </div>
+        <!-- Log -->
+        <div class="cfg-log" id="cfg-log"><span style="color:#555">— Log lệnh sẽ hiện ở đây —</span></div>
+      </div>
+
+    </div><!-- cfg-wrap -->
+  </div><!-- screen-cfg -->
 
 <script>
+  /* ========= NAV ========= */
+  function switchTab(tab) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+    document.getElementById('screen-' + tab).classList.add('active');
+    document.getElementById('tab-' + tab).classList.add('active');
+  }
+
+  /* ========= TRANG CHỦ ========= */
   let dangQuet = false;
 
-  // ---- Bắt đầu / Dừng quét ----
   function toggleScan() {
     const btn = document.getElementById('btn-scan');
     const overlay = document.getElementById('scan-overlay');
-
     if (!dangQuet) {
-      // Bắt đầu quét
       fetch('/bat_dau_quet', { method: 'POST' })
         .then(r => r.json())
         .then(data => {
@@ -436,13 +664,9 @@ TRANG_WEB = """
         })
         .catch(() => hienThongBao('❌ Lỗi kết nối', '#f44336'));
     } else {
-      // Dừng quét thủ công
       fetch('/ket_thuc_quet', { method: 'POST' })
         .then(r => r.json())
-        .then(data => {
-          ketThucScan();
-          hienThongBao(data.thong_bao, '#FF9800');
-        })
+        .then(data => { ketThucScan(); hienThongBao(data.thong_bao, '#FF9800'); })
         .catch(() => ketThucScan());
     }
   }
@@ -455,7 +679,6 @@ TRANG_WEB = """
     document.getElementById('scan-overlay').style.display = 'none';
   }
 
-  // ---- Cập nhật kết quả AI ----
   function capNhatKetQua() {
     fetch('/ket_qua')
       .then(r => r.json())
@@ -466,8 +689,6 @@ TRANG_WEB = """
         document.getElementById('thanh').style.width = pct + '%';
         document.getElementById('thanh').style.background =
           data.do_tin_cay >= 0.8 ? '#4CAF50' : '#FF9800';
-
-        // Nếu server báo scan đã kết thúc (AI tự động nhận diện xong)
         if (dangQuet && !data.dang_quet) {
           ketThucScan();
           if (data.thung !== 0) {
@@ -475,28 +696,73 @@ TRANG_WEB = """
             hienThongBao(`✅ Đã nhận diện: ${data.nhan} → Mở Thùng ${data.thung} (${ten})`, '#4CAF50');
           }
         }
-
         document.getElementById('trang-thai').textContent = '🟢 Hệ thống đang hoạt động';
       })
-      .catch(() => {
-        document.getElementById('trang-thai').textContent = '🔴 Mất kết nối';
-      });
+      .catch(() => { document.getElementById('trang-thai').textContent = '🔴 Mất kết nối'; });
   }
 
-  // ---- Mở nắp thủ công ----
   function moThuCong(so) {
     fetch('/mo_nap/' + so, { method: 'POST' })
       .then(r => r.json())
       .then(data => hienThongBao(data.thong_bao, '#4CAF50'));
   }
 
-  // ---- Hiển thị thông báo ----
   function hienThongBao(msg, mau) {
     const tb = document.getElementById('thong-bao');
     tb.textContent = msg;
     tb.style.background = mau || '#4CAF50';
     tb.style.display = 'block';
     setTimeout(() => tb.style.display = 'none', 4000);
+  }
+
+  /* ========= CẤU HÌNH – Gửi lệnh ========= */
+  function guiLenh(id) {
+    const ta  = document.getElementById(id);
+    const btn = ta.closest('.cmd-row').querySelector('.btn-send');
+    const raw = ta.value.trim();
+
+    // Validate JSON
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+      ta.classList.remove('error');
+    } catch(e) {
+      ta.classList.add('error');
+      logCfg(`❌ JSON không hợp lệ: ${e.message}`, 'log-err');
+      return;
+    }
+
+    btn.textContent = '...';
+    btn.classList.add('sending');
+
+    fetch('/gui_lenh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(parsed)
+    })
+    .then(r => r.json())
+    .then(data => {
+      logCfg(`✅ Đã gửi: ${raw}`, 'log-ok');
+      btn.textContent = '✓';
+      setTimeout(() => { btn.textContent = 'Gửi'; btn.classList.remove('sending'); }, 1200);
+    })
+    .catch(err => {
+      logCfg(`❌ Lỗi gửi: ${err}`, 'log-err');
+      btn.textContent = 'Gửi';
+      btn.classList.remove('sending');
+    });
+  }
+
+  function logCfg(msg, cls) {
+    const log = document.getElementById('cfg-log');
+    const now = new Date().toLocaleTimeString('vi-VN');
+    const line = document.createElement('div');
+    line.className = cls || '';
+    line.textContent = `[${now}] ${msg}`;
+    log.appendChild(line);
+    log.scrollTop = log.scrollHeight;
+    // Giữ tối đa 60 dòng
+    while (log.children.length > 60) log.removeChild(log.firstChild);
   }
 
   setInterval(capNhatKetQua, 1000);
@@ -569,22 +835,13 @@ def mo_nap_thu_cong(so):
         return jsonify({"thong_bao": f"✅ Đã mở Thùng {so} – {ten}"})
     return jsonify({"thong_bao": "❌ Số thùng không hợp lệ"})
 
-# Endpoint test tiện ích (theo docs)
-@app.route('/test/beep', methods=['POST'])
-def test_beep():
-    arduino_beep()
-    return jsonify({"ok": True, "cmd": "beep"})
-
-@app.route('/test/set_bin', methods=['POST'])
-def test_set_bin():
-    """VD: POST JSON {"bin":1,"open":120,"close":5} hoặc {"bin":1,"time":4000}"""
-    data = request.get_json(force=True)
-    arduino_set_bin(
-        bin_num     = data.get('bin', 1),
-        open_angle  = data.get('open'),
-        close_angle = data.get('close'),
-        time_ms     = data.get('time')
-    )
+@app.route('/gui_lenh', methods=['POST'])
+def gui_lenh_raw():
+    """Nhận JSON tuỳ ý từ trang Cấu Hình và forward thẳng sang Arduino"""
+    data = request.get_json(force=True, silent=True)
+    if data is None:
+        return jsonify({"ok": False, "error": "JSON không hợp lệ"}), 400
+    gui_lenh_arduino(data)
     return jsonify({"ok": True, "sent": data})
 
 # ---------------------------------------------------------------
