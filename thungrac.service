@@ -1,0 +1,17 @@
+[Unit]
+Description=Thung Rac Thong Minh
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# --- Đổi 'pi' thành username thực tế của bạn nếu khác ---
+User=pi
+WorkingDirectory=/home/pi/Documents/bin/recycle-pi4
+ExecStart=/usr/bin/python3 /home/pi/Documents/bin/recycle-pi4/raspberry.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
