@@ -60,16 +60,40 @@ output_details = interpreter.get_output_details()
 MODEL_SIZE = (224, 224)
 
 # ---------------------------------------------------------------
+# ⚙️  CẤU HÌNH SERVO TỪNG THÙNG – Chỉnh ở đây nếu cần
+# ---------------------------------------------------------------
+# Góc servo và thời gian mở cho mỗi thùng (bin 1, 2, 3)
+SERVO_CONFIG = {
+    1: {"open": 120, "close": 5, "time": 4000},
+    2: {"open": 120, "close": 5, "time": 4000},
+    3: {"open": 120, "close": 5, "time": 4000},
+}
+
+# ---------------------------------------------------------------
 # 🔌  KẾT NỐI ARDUINO
 # ---------------------------------------------------------------
 arduino = None
+
+def gui_setup_arduino():
+    """Gửi các lệnh cài đặt ban đầu cho từng servo"""
+    print("⚙️  Đang gửi cấu hình servo...")
+    for bin_num, cfg in SERVO_CONFIG.items():
+        # 1. Cài thời gian mở
+        gui_lenh_arduino({"cmd": "set", "bin": bin_num, "time": cfg["time"]})
+        time.sleep(0.2)
+        # 2. Cài góc mở / đóng
+        gui_lenh_arduino({"cmd": "set", "bin": bin_num,
+                          "open": cfg["open"], "close": cfg["close"]})
+        time.sleep(0.2)
+    print("✅ Đã gửi xong cấu hình servo cho cả 3 thùng")
 
 def ket_noi_arduino():
     global arduino
     try:
         arduino = serial.Serial(ARDUINO_PORT, ARDUINO_BAUD, timeout=1)
-        time.sleep(3)
+        time.sleep(3)  # Chờ Arduino khởi động xong
         print(f"✅ Đã kết nối Arduino tại {ARDUINO_PORT}")
+        gui_setup_arduino()  # Gửi cấu hình ngay sau khi kết nối
     except Exception as e:
         print(f"⚠️  Không kết nối được Arduino: {e}")
         arduino = None
