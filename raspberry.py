@@ -12,12 +12,16 @@
 #   pip3 install pyserial pillow
 # ================================================================
 
+import os
 import cv2
 import numpy as np
 import serial
 import time
 import json
 import threading
+
+# Thư mục chứa file .py này – dùng để resolve đường dẫn tương đối
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 from flask import Flask, Response, render_template_string, jsonify, request
 
 # ---------------------------------------------------------------
@@ -46,8 +50,8 @@ except ImportError:
     import tensorflow as tf
     tflite = tf.lite
 
-MODEL_PATH  = 'model_unquant.tflite'
-LABELS_PATH = 'labels.txt'
+MODEL_PATH  = os.path.join(BASE_DIR, 'model_unquant.tflite')
+LABELS_PATH = os.path.join(BASE_DIR, 'labels.txt')
 
 with open(LABELS_PATH, 'r') as f:
     NHAN_RAC = [line.strip().split(' ', 1)[1] for line in f.readlines()]
