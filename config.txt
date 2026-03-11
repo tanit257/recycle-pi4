@@ -1,0 +1,13 @@
+Sau khi vào được Pi (qua SSH hoặc màn hình), chạy:
+
+
+sudo nano /etc/dhcpcd.conf
+Thêm vào cuối file:
+
+
+interface wlan0
+static ip_address=172.20.10.5/28
+static routers=172.20.10.1
+static domain_name_servers=172.20.10.1
+
+sudo reboot
