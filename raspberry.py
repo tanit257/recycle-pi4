@@ -24,9 +24,9 @@ from flask import Flask, Response, render_template_string, jsonify, request
 # ⚙️  CÀI ĐẶT – Chỉnh sửa ở đây nếu cần
 # ---------------------------------------------------------------
 
-# Cổng kết nối Arduino (chạy "ls /dev/tty*" trong Terminal để tìm)
-ARDUINO_PORT = '/dev/ttyUSB1'   # Thử /dev/ttyACM0 nếu không được
-ARDUINO_BAUD = 115200
+# Danh sách cổng Arduino – tự thử từng cổng cho đến khi kết nối được
+ARDUINO_PORTS = ['/dev/ttyUSB0', '/dev/ttyUSB1', '/dev/ttyACM0', '/dev/ttyACM1']
+ARDUINO_BAUD  = 115200
 
 # Chỉ số camera (0 = camera mặc định, 1 = camera ngoài)
 CAMERA_INDEX = 0
@@ -72,41 +72,86 @@ SERVO_CONFIG = {
 # ---------------------------------------------------------------
 # 🔌  KẾT NỐI ARDUINO
 # ---------------------------------------------------------------
-arduino = None
+arduino      = None
+arduino_port_dang_dung = None   # port đang kết nối thành công
+arduino_lock = threading.Lock()
 
 def gui_setup_arduino():
     """Gửi các lệnh cài đặt ban đầu cho từng servo"""
     print("⚙️  Đang gửi cấu hình servo...")
     for bin_num, cfg in SERVO_CONFIG.items():
-        # 1. Cài thời gian mở
         gui_lenh_arduino({"cmd": "set", "bin": bin_num, "time": cfg["time"]})
         time.sleep(0.2)
-        # 2. Cài góc mở / đóng
         gui_lenh_arduino({"cmd": "set", "bin": bin_num,
                           "open": cfg["open"], "close": cfg["close"]})
         time.sleep(0.2)
     print("✅ Đã gửi xong cấu hình servo cho cả 3 thùng")
 
-def ket_noi_arduino():
-    global arduino
+def _thu_ket_noi(port: str) -> bool:
+    """Thử kết nối 1 port, trả về True nếu thành công"""
+    global arduino, arduino_port_dang_dung
     try:
-        arduino = serial.Serial(ARDUINO_PORT, ARDUINO_BAUD, timeout=1)
-        time.sleep(3)  # Chờ Arduino khởi động xong
-        print(f"✅ Đã kết nối Arduino tại {ARDUINO_PORT}")
-        gui_setup_arduino()  # Gửi cấu hình ngay sau khi kết nối
+        ser = serial.Serial(port, ARDUINO_BAUD, timeout=1)
+        time.sleep(3)          # Chờ Arduino boot
+        with arduino_lock:
+            arduino = ser
+            arduino_port_dang_dung = port
+        print(f"✅ Đã kết nối Arduino tại {port}")
+        gui_setup_arduino()
+        return True
     except Exception as e:
-        print(f"⚠️  Không kết nối được Arduino: {e}")
-        arduino = None
+        print(f"   ✗ {port}: {e}")
+        return False
+
+def ket_noi_arduino():
+    """Thử lần lượt từng port trong ARDUINO_PORTS"""
+    print(f"🔍 Tìm Arduino trên: {ARDUINO_PORTS}")
+    for port in ARDUINO_PORTS:
+        if _thu_ket_noi(port):
+            return
+    print("⚠️  Không tìm thấy Arduino – sẽ thử lại ở background")
+
+def vong_lap_ket_noi_lai():
+    """Thread chạy nền: nếu Arduino mất kết nối thì tự tìm và kết nối lại"""
+    global arduino
+    while True:
+        time.sleep(5)
+        with arduino_lock:
+            ket_noi = arduino is not None and arduino.is_open
+        if not ket_noi:
+            print("🔄 Mất kết nối Arduino – đang thử kết nối lại...")
+            # Đóng port cũ nếu còn
+            with arduino_lock:
+                try:
+                    if arduino:
+                        arduino.close()
+                except Exception:
+                    pass
+                arduino = None
+                arduino_port_dang_dung = None
+            # Thử lại từng port
+            for port in ARDUINO_PORTS:
+                if _thu_ket_noi(port):
+                    break
+            else:
+                print("⚠️  Vẫn chưa kết nối được – thử lại sau 5 giây...")
 
 # ---- Hàm gửi lệnh JSON chuẩn ----
 def gui_lenh_arduino(cmd_dict: dict):
     """Gửi lệnh dạng JSON sang Arduino, VD: {"cmd": "open_bin", "bin": 1}"""
-    if arduino and arduino.is_open:
-        json_str = json.dumps(cmd_dict) + '\n'
-        arduino.write(json_str.encode())
-        print(f"📡 Gửi Arduino: {json_str.strip()}")
+    with arduino_lock:
+        ser = arduino
+    if ser and ser.is_open:
+        try:
+            json_str = json.dumps(cmd_dict) + '\n'
+            ser.write(json_str.encode())
+            print(f"📡 Gửi Arduino [{arduino_port_dang_dung}]: {json_str.strip()}")
+        except Exception as e:
+            print(f"⚠️  Lỗi gửi lệnh: {e} – sẽ reconnect...")
+            with arduino_lock:
+                globals()['arduino'] = None
     else:
-        print(f"⚠️  Arduino chưa kết nối – lệnh: {cmd_dict}")
+        print(f"⚠️  Arduino chưa kết nối – lệnh bị bỏ qua: {cmd_dict}")
 
 # ---- Các lệnh tiện ích ----
 def arduino_scan_start():
@@ -853,6 +898,10 @@ if __name__ == '__main__':
     print("=" * 50)
 
     ket_noi_arduino()
+
+    # Thread tự động kết nối lại Arduino khi mất kết nối
+    thread_reconnect = threading.Thread(target=vong_lap_ket_noi_lai, daemon=True)
+    thread_reconnect.start()
 
     thread_camera = threading.Thread(target=vong_lap_camera, daemon=True)
     thread_camera.start()
