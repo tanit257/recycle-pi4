@@ -25,7 +25,7 @@ from flask import Flask, Response, render_template_string, jsonify, request
 # ---------------------------------------------------------------
 
 # Cổng kết nối Arduino (chạy "ls /dev/tty*" trong Terminal để tìm)
-ARDUINO_PORT = '/dev/ttyUSB0'   # Thử /dev/ttyACM0 nếu không được
+ARDUINO_PORT = '/dev/ttyUSB1'   # Thử /dev/ttyACM0 nếu không được
 ARDUINO_BAUD = 115200
 
 # Chỉ số camera (0 = camera mặc định, 1 = camera ngoài)
