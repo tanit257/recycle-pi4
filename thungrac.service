@@ -7,7 +7,7 @@ Wants=network-online.target
 # --- Đổi 'pi' thành username thực tế của bạn nếu khác ---
 User=pi
 WorkingDirectory=/home/pi/Documents/bin/recycle-pi4
-ExecStart=/usr/bin/python3 /home/pi/Documents/bin/recycle-pi4/raspberry.py
+ExecStart=/bin/bash -c 'source /home/pi/Documents/bin/recycle-pi4/venv/bin/activate && python /home/pi/Documents/bin/recycle-pi4/raspberry.py'
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
