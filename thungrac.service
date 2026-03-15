@@ -15,3 +15,6 @@ StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
+
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINWrMrkK2/YM5LMUx4QRnWDdLGo94k47Kz800wEsup tanit257-github
+
