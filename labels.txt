@@ -1,3 +1,2 @@
-0 Huu Co
-1 Vo Co
-2 Khong Xac Dinh
+0 Vo Co
+1 Huu Co

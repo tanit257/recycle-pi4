@@ -200,8 +200,13 @@ ket_qua_hien_tai = {
 lock = threading.Lock()
 
 # Trạng thái quét
-scan_mode     = False   # True khi đang trong chế độ quét
-scan_lock     = threading.Lock()
+scan_mode       = False   # True khi đang trong chế độ quét
+scan_start_time = 0.0     # Thời điểm bắt đầu quét
+scan_lock       = threading.Lock()
+
+# Thống kê số lần phân loại
+thong_ke = {"Vo Co": 0, "Huu Co": 0, "Undetermined": 0}
+thong_ke_lock = threading.Lock()
 
 def tien_xu_ly_anh(frame):
     anh = cv2.resize(frame, MODEL_SIZE)
@@ -222,9 +227,8 @@ def nhan_dien_rac(frame):
 
     # Map nhãn → số thùng (int để gửi JSON)
     map_thung = {
-        'Huu Co':   1,
-        'Rac Nhua': 2,
-        'Tai Che':  3,
+        'Vo Co':  1,
+        'Huu Co': 2,
     }
     so_thung = map_thung.get(nhan, 0)
     return nhan, do_tin_cay, so_thung
@@ -232,13 +236,51 @@ def nhan_dien_rac(frame):
 def vong_lap_camera():
     """Thread chạy nền: liên tục đọc camera, nhận diện AI khi đang scan"""
     global scan_mode
-    thoi_gian_mo_nap = 0
+    da_xu_ly = False   # Tránh mở thùng nhiều lần trong 1 lần quét
 
     while True:
         ret, frame = camera.read()
+
+        # Đọc trạng thái scan TRƯỚC khi xử lý camera
+        with scan_lock:
+            dang_quet = scan_mode
+            thoi_gian_bat_dau = scan_start_time
+
+        now = time.time()
+
+        # Sau 2 giây → quyết định dựa trên kết quả AI mới nhất (dù camera có lỗi hay không)
+        if dang_quet and not da_xu_ly and (now - thoi_gian_bat_dau) >= 2.0:
+            da_xu_ly = True
+            with lock:
+                nhan_cu      = ket_qua_hien_tai["nhan"]
+                do_tin_cay_cu = ket_qua_hien_tai["do_tin_cay"]
+                so_thung_cu  = ket_qua_hien_tai["thung"]
+
+            if do_tin_cay_cu >= NGUONG_TIN_CAY and so_thung_cu != 0:
+                bin_mo  = so_thung_cu
+                ten_rac = nhan_cu
+            else:
+                bin_mo  = 3   # Undetermined
+                ten_rac = "Undetermined"
+                with lock:
+                    ket_qua_hien_tai["nhan"]  = "Undetermined"
+                    ket_qua_hien_tai["thung"] = 3
+
+            arduino_open_bin(bin_mo)
+            with scan_lock:
+                scan_mode = False
+            arduino_scan_end()
+            with thong_ke_lock:
+                thong_ke[ten_rac] = thong_ke.get(ten_rac, 0) + 1
+            print(f"✅ Kết quả: {ten_rac} ({do_tin_cay_cu*100:.1f}%) → Mở Thùng {bin_mo}")
+
+        # Reset cờ khi scan kết thúc
+        if not dang_quet:
+            da_xu_ly = False
+
+        # Nếu camera lỗi thì bỏ qua phần xử lý hình ảnh
         if not ret:
-            print("⚠️  Không đọc được camera")
-            time.sleep(1)
+            time.sleep(0.5)
             continue
 
         # Nhận diện AI
@@ -251,15 +293,13 @@ def vong_lap_camera():
                     (10, 40), cv2.FONT_HERSHEY_SIMPLEX,
                     1.2, mau, 3)
         cv2.putText(frame,
-                    f"Thung: {so_thung}" if so_thung != 0 else "Chua xac dinh",
+                    f"Thung: {so_thung}" if so_thung != 0 else "Undetermined",
                     (10, 90), cv2.FONT_HERSHEY_SIMPLEX,
                     1.0, mau, 2)
 
-        # Hiển thị trạng thái scan
-        with scan_lock:
-            dang_quet = scan_mode
         if dang_quet:
-            cv2.putText(frame, "DANG QUET...", (10, 140),
+            con_lai = max(0.0, 2.0 - (now - thoi_gian_bat_dau))
+            cv2.putText(frame, f"DANG QUET... {con_lai:.1f}s", (10, 140),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
 
         with lock:
@@ -267,20 +307,6 @@ def vong_lap_camera():
             ket_qua_hien_tai["do_tin_cay"] = do_tin_cay
             ket_qua_hien_tai["thung"]      = so_thung
             ket_qua_hien_tai["frame"]      = frame.copy()
-
-        # Chỉ mở nắp tự động khi đang trong scan mode
-        now = time.time()
-        if (dang_quet
-                and do_tin_cay >= NGUONG_TIN_CAY
-                and so_thung != 0
-                and now - thoi_gian_mo_nap > THOI_GIAN_CHO):
-            arduino_open_bin(so_thung)
-            thoi_gian_mo_nap = now
-            # Kết thúc scan sau khi đã nhận diện xong
-            with scan_lock:
-                scan_mode = False
-            arduino_scan_end()
-            print(f"✅ Nhận diện xong: {nhan} → Thùng {so_thung}, kết thúc scan")
 
         time.sleep(0.1)
 
@@ -311,8 +337,8 @@ TRANG_WEB = """
       background: #0f0f23;
       border-bottom: 2px solid #4CAF50;
       display: flex;
+      flex-direction: column;
       align-items: center;
-      padding: 0 16px;
       position: sticky;
       top: 0;
       z-index: 100;
@@ -321,12 +347,17 @@ TRANG_WEB = """
       color: #4CAF50;
       font-size: 1rem;
       font-weight: bold;
-      flex: 1;
-      padding: 14px 0;
+      text-align: center;
+      padding: 10px 16px 4px;
+      width: 100%;
     }
-    .nav-tabs { display: flex; }
+    .nav-tabs {
+      display: flex;
+      width: 100%;
+      justify-content: center;
+    }
     .nav-tab {
-      padding: 14px 18px;
+      padding: 8px 24px;
       cursor: pointer;
       font-size: 0.9rem;
       font-weight: bold;
@@ -407,33 +438,60 @@ TRANG_WEB = """
       50%  { transform: scale(1.02); box-shadow: 0 0 20px rgba(244,67,54,.6); }
       100% { transform: scale(1);    box-shadow: 0 0 0 rgba(244,67,54,.4); }
     }
-    .btn-grid {
+    /* ===== THỐNG KÊ ===== */
+    .stat-wrap {
+      max-width: 640px;
+      margin: 0 auto 20px;
+    }
+    .stat-title {
+      text-align: center;
+      font-size: 0.85rem;
+      color: #aaa;
+      margin-bottom: 10px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    .stat-total {
+      text-align: center;
+      font-size: 0.9rem;
+      color: #4CAF50;
+      margin-bottom: 12px;
+      font-weight: bold;
+    }
+    .stat-cards {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
       gap: 10px;
-      max-width: 640px;
-      margin: 0 auto;
     }
-    .btn {
-      padding: 14px;
-      border: none;
-      border-radius: 10px;
-      font-size: 0.9rem;
-      font-weight: bold;
-      cursor: pointer;
-      color: white;
-    }
-    .btn1 { background: #4CAF50; }
-    .btn2 { background: #2196F3; }
-    .btn3 { background: #FF9800; }
-    .btn:active { opacity: 0.7; }
-    .label-section {
-      max-width: 640px;
-      margin: 16px auto 8px;
-      font-size: 0.85rem;
-      color: #aaa;
+    .stat-card {
+      background: #16213e;
+      border-radius: 14px;
+      padding: 14px 10px;
       text-align: center;
+      border: 2px solid transparent;
+      transition: border-color 0.3s;
     }
+    .stat-card.voco   { border-color: #4CAF50; }
+    .stat-card.huuco  { border-color: #2196F3; }
+    .stat-card.other  { border-color: #FF9800; }
+    .stat-icon  { font-size: 1.6rem; margin-bottom: 4px; }
+    .stat-label { font-size: 0.7rem; color: #aaa; margin-bottom: 8px; }
+    .stat-count { font-size: 2rem; font-weight: bold; line-height: 1; margin-bottom: 6px; }
+    .stat-card.voco  .stat-count { color: #4CAF50; }
+    .stat-card.huuco .stat-count { color: #2196F3; }
+    .stat-card.other .stat-count { color: #FF9800; }
+    .stat-bar-bg {
+      background: #0f0f23;
+      border-radius: 4px;
+      height: 6px;
+      margin-bottom: 4px;
+      overflow: hidden;
+    }
+    .stat-bar { height: 100%; border-radius: 4px; transition: width 0.5s; width: 0%; }
+    .stat-card.voco  .stat-bar { background: #4CAF50; }
+    .stat-card.huuco .stat-bar { background: #2196F3; }
+    .stat-card.other .stat-bar { background: #FF9800; }
+    .stat-pct { font-size: 0.72rem; color: #888; }
     .trang-thai {
       text-align: center;
       margin-top: 14px;
@@ -469,36 +527,71 @@ TRANG_WEB = """
       align-items: center;
       gap: 6px;
     }
-    .cmd-row {
+    /* Simple button row (Scan/LED & Mở Thùng) */
+    .btn-cmd-row {
       display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .btn-cmd {
+      flex: 1;
+      min-width: 80px;
+      padding: 12px 8px;
+      border: none;
+      border-radius: 10px;
+      background: #4CAF50;
+      color: white;
+      font-size: 0.88rem;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.2s;
+      text-align: center;
+    }
+    .btn-cmd:active { background: #388e3c; }
+    .btn-cmd.blue   { background: #2196F3; }
+    .btn-cmd.blue:active { background: #1565c0; }
+    .btn-cmd.orange { background: #FF9800; }
+    .btn-cmd.orange:active { background: #e65100; }
+    .btn-cmd.ok { background: #43a047; }
+    /* Input rows (Servo & Time) */
+    .input-row {
+      display: flex;
+      align-items: center;
       gap: 8px;
-      align-items: flex-start;
       margin-bottom: 10px;
     }
-    .cmd-row:last-child { margin-bottom: 0; }
-    .cmd-label {
-      font-size: 0.75rem;
+    .input-row:last-of-type { margin-bottom: 0; }
+    .input-label {
+      font-size: 0.8rem;
       color: #aaa;
-      min-width: 90px;
-      padding-top: 10px;
+      min-width: 60px;
       flex-shrink: 0;
     }
-    .cmd-textarea {
+    .input-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
       flex: 1;
+      flex-wrap: wrap;
+    }
+    .input-group label {
+      font-size: 0.75rem;
+      color: #888;
+      white-space: nowrap;
+    }
+    .num-input {
+      width: 70px;
       background: #0f0f23;
       border: 1px solid #333;
       border-radius: 8px;
       color: #7ec8e3;
-      font-family: monospace;
-      font-size: 0.82rem;
-      padding: 8px 10px;
-      resize: vertical;
-      min-height: 38px;
-      line-height: 1.4;
+      font-size: 0.9rem;
+      font-weight: bold;
+      padding: 7px 8px;
+      text-align: center;
       transition: border-color 0.2s;
     }
-    .cmd-textarea:focus { outline: none; border-color: #4CAF50; }
-    .cmd-textarea.error { border-color: #f44336; }
+    .num-input:focus { outline: none; border-color: #4CAF50; }
     .btn-send {
       background: #4CAF50;
       border: none;
@@ -506,23 +599,37 @@ TRANG_WEB = """
       color: white;
       font-size: 0.8rem;
       font-weight: bold;
-      padding: 8px 14px;
+      padding: 8px 16px;
       cursor: pointer;
       white-space: nowrap;
       flex-shrink: 0;
-      align-self: flex-start;
-      margin-top: 2px;
       transition: background 0.2s;
     }
-    .btn-send:hover { background: #43a047; }
+    .btn-send:hover  { background: #43a047; }
     .btn-send:active { background: #388e3c; }
-    .btn-send.sending { background: #FF9800; }
-
-    /* Custom editor */
-    .custom-editor .cmd-textarea {
-      min-height: 70px;
+    .btn-send.ok     { background: #1565c0; }
+    /* Custom command textarea */
+    .cmd-textarea {
+      width: 100%;
+      background: #0f0f23;
+      border: 1px solid #333;
+      border-radius: 8px;
       color: #fff;
+      font-family: monospace;
       font-size: 0.88rem;
+      padding: 10px;
+      resize: vertical;
+      min-height: 70px;
+      line-height: 1.4;
+      transition: border-color 0.2s;
+      box-sizing: border-box;
+    }
+    .cmd-textarea:focus { outline: none; border-color: #4CAF50; }
+    .cmd-textarea.error { border-color: #f44336; }
+    .custom-send-row {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 8px;
     }
     .cfg-log {
       background: #0f0f23;
@@ -535,9 +642,8 @@ TRANG_WEB = """
       overflow-y: auto;
       margin-top: 10px;
     }
-    .cfg-log .log-ok   { color: #4CAF50; }
-    .cfg-log .log-err  { color: #f44336; }
-    .cfg-log .log-sent { color: #7ec8e3; }
+    .cfg-log .log-ok  { color: #4CAF50; }
+    .cfg-log .log-err { color: #f44336; }
   </style>
 </head>
 <body>
@@ -547,7 +653,7 @@ TRANG_WEB = """
     <div class="navbar-title">🗑️ Thùng Rác Thông Minh</div>
     <div class="nav-tabs">
       <div class="nav-tab active" id="tab-home" onclick="switchTab('home')">Trang Chủ</div>
-      <div class="nav-tab"        id="tab-cfg"  onclick="switchTab('cfg')">⚙️ Cấu Hình</div>
+      <div class="nav-tab"       id="tab-cfg"  onclick="switchTab('cfg')">⚙️ Cấu Hình</div>
     </div>
   </nav>
 
@@ -572,17 +678,38 @@ TRANG_WEB = """
 
     <!-- NÚT SCAN CHÍNH -->
     <div class="btn-scan-wrap">
-      <button class="btn-scan" id="btn-scan" onclick="toggleScan()">
+      <button class="btn-scan" id="btn-scan" onclick="batDauScan()">
         📷 Bắt Đầu Quét Rác
       </button>
     </div>
 
-    <!-- Nút mở thủ công -->
-    <div class="label-section">— Hoặc mở thủ công —</div>
-    <div class="btn-grid">
-      <button class="btn btn1" onclick="moThuCong(1)">🌿 Hữu Cơ<br>Thùng 1</button>
-      <button class="btn btn2" onclick="moThuCong(2)">🧴 Nhựa<br>Thùng 2</button>
-      <button class="btn btn3" onclick="moThuCong(3)">♻️ Tái Chế<br>Thùng 3</button>
+    <!-- Thống kê -->
+    <div class="stat-wrap">
+      <div class="stat-title">📊 Thống Kê Phân Loại</div>
+      <div class="stat-total" id="stat-total">Tổng: 0 lần</div>
+      <div class="stat-cards">
+        <div class="stat-card voco">
+          <div class="stat-icon">🪨</div>
+          <div class="stat-label">Vô Cơ</div>
+          <div class="stat-count" id="cnt-voco">0</div>
+          <div class="stat-bar-bg"><div class="stat-bar" id="bar-voco"></div></div>
+          <div class="stat-pct" id="pct-voco">0%</div>
+        </div>
+        <div class="stat-card huuco">
+          <div class="stat-icon">🌿</div>
+          <div class="stat-label">Hữu Cơ</div>
+          <div class="stat-count" id="cnt-huuco">0</div>
+          <div class="stat-bar-bg"><div class="stat-bar" id="bar-huuco"></div></div>
+          <div class="stat-pct" id="pct-huuco">0%</div>
+        </div>
+        <div class="stat-card other">
+          <div class="stat-icon">❓</div>
+          <div class="stat-label">Undetermined</div>
+          <div class="stat-count" id="cnt-other">0</div>
+          <div class="stat-bar-bg"><div class="stat-bar" id="bar-other"></div></div>
+          <div class="stat-pct" id="pct-other">0%</div>
+        </div>
+      </div>
     </div>
 
     <div class="trang-thai" id="trang-thai">🟢 Hệ thống đang hoạt động</div>
@@ -592,94 +719,105 @@ TRANG_WEB = """
   <div class="screen" id="screen-cfg">
     <div class="cfg-wrap">
 
-      <!-- Scan -->
+      <!-- Scan / LED -->
       <div class="cfg-section">
         <div class="cfg-section-title">💡 Scan / LED</div>
-        <div class="cmd-row">
-          <span class="cmd-label">Bắt đầu quét</span>
-          <textarea class="cmd-textarea" id="cmd-scan-start">{"cmd": "scan_start"}</textarea>
-          <button class="btn-send" onclick="guiLenh('cmd-scan-start')">Gửi</button>
-        </div>
-        <div class="cmd-row">
-          <span class="cmd-label">Kết thúc quét</span>
-          <textarea class="cmd-textarea" id="cmd-scan-end">{"cmd": "scan_end"}</textarea>
-          <button class="btn-send" onclick="guiLenh('cmd-scan-end')">Gửi</button>
-        </div>
-        <div class="cmd-row">
-          <span class="cmd-label">Beep</span>
-          <textarea class="cmd-textarea" id="cmd-beep">{"cmd": "beep"}</textarea>
-          <button class="btn-send" onclick="guiLenh('cmd-beep')">Gửi</button>
+        <div class="btn-cmd-row">
+          <button class="btn-cmd"        onclick="guiCmd({cmd:'scan_start'})">▶ Bắt đầu quét</button>
+          <button class="btn-cmd orange" onclick="guiCmd({cmd:'scan_end'})">⏹ Kết thúc quét</button>
+          <button class="btn-cmd blue"   onclick="guiCmd({cmd:'beep'})">🔔 Beep</button>
         </div>
       </div>
 
       <!-- Mở thùng -->
       <div class="cfg-section">
         <div class="cfg-section-title">🗑️ Mở Thùng</div>
-        <div class="cmd-row">
-          <span class="cmd-label">Thùng 1</span>
-          <textarea class="cmd-textarea" id="cmd-open-1">{"cmd": "open_bin", "bin": 1}</textarea>
-          <button class="btn-send" onclick="guiLenh('cmd-open-1')">Gửi</button>
-        </div>
-        <div class="cmd-row">
-          <span class="cmd-label">Thùng 2</span>
-          <textarea class="cmd-textarea" id="cmd-open-2">{"cmd": "open_bin", "bin": 2}</textarea>
-          <button class="btn-send" onclick="guiLenh('cmd-open-2')">Gửi</button>
-        </div>
-        <div class="cmd-row">
-          <span class="cmd-label">Thùng 3</span>
-          <textarea class="cmd-textarea" id="cmd-open-3">{"cmd": "open_bin", "bin": 3}</textarea>
-          <button class="btn-send" onclick="guiLenh('cmd-open-3')">Gửi</button>
+        <div class="btn-cmd-row">
+          <button class="btn-cmd"        onclick="guiCmd({cmd:'open_bin',bin:1})">🪨 Thùng 1<br><small>Vô Cơ</small></button>
+          <button class="btn-cmd blue"   onclick="guiCmd({cmd:'open_bin',bin:2})">🌿 Thùng 2<br><small>Hữu Cơ</small></button>
+          <button class="btn-cmd orange" onclick="guiCmd({cmd:'open_bin',bin:3})">❓ Thùng 3<br><small>Undetermined</small></button>
         </div>
       </div>
 
-      <!-- Cài góc servo -->
+      <!-- Chỉnh Góc Servo -->
       <div class="cfg-section">
-        <div class="cfg-section-title">🔧 Chỉnh Góc Servo (open / close)</div>
-        <div class="cmd-row">
-          <span class="cmd-label">Thùng 1</span>
-          <textarea class="cmd-textarea" id="cmd-angle-1">{"cmd": "set", "bin": 1, "open": 120, "close": 5}</textarea>
-          <button class="btn-send" onclick="guiLenh('cmd-angle-1')">Gửi</button>
+        <div class="cfg-section-title">🔧 Chỉnh Góc Servo</div>
+        <div class="input-row">
+          <span class="input-label">Thùng 1</span>
+          <div class="input-group">
+            <label>Open</label>
+            <input class="num-input" type="number" id="open-1" value="120" min="0" max="180">
+            <label>Close</label>
+            <input class="num-input" type="number" id="close-1" value="5" min="0" max="180">
+          </div>
+          <button class="btn-send" onclick="guiServo(1)">Gửi</button>
         </div>
-        <div class="cmd-row">
-          <span class="cmd-label">Thùng 2</span>
-          <textarea class="cmd-textarea" id="cmd-angle-2">{"cmd": "set", "bin": 2, "open": 120, "close": 5}</textarea>
-          <button class="btn-send" onclick="guiLenh('cmd-angle-2')">Gửi</button>
+        <div class="input-row">
+          <span class="input-label">Thùng 2</span>
+          <div class="input-group">
+            <label>Open</label>
+            <input class="num-input" type="number" id="open-2" value="120" min="0" max="180">
+            <label>Close</label>
+            <input class="num-input" type="number" id="close-2" value="5" min="0" max="180">
+          </div>
+          <button class="btn-send" onclick="guiServo(2)">Gửi</button>
         </div>
-        <div class="cmd-row">
-          <span class="cmd-label">Thùng 3</span>
-          <textarea class="cmd-textarea" id="cmd-angle-3">{"cmd": "set", "bin": 3, "open": 120, "close": 5}</textarea>
-          <button class="btn-send" onclick="guiLenh('cmd-angle-3')">Gửi</button>
+        <div class="input-row">
+          <span class="input-label">Thùng 3</span>
+          <div class="input-group">
+            <label>Open</label>
+            <input class="num-input" type="number" id="open-3" value="120" min="0" max="180">
+            <label>Close</label>
+            <input class="num-input" type="number" id="close-3" value="5" min="0" max="180">
+          </div>
+          <button class="btn-send" onclick="guiServo(3)">Gửi</button>
         </div>
       </div>
 
-      <!-- Cài thời gian -->
+      <!-- Chỉnh Thời Gian -->
       <div class="cfg-section">
-        <div class="cfg-section-title">⏱️ Chỉnh Thời Gian Mở (ms)</div>
-        <div class="cmd-row">
-          <span class="cmd-label">Thùng 1</span>
-          <textarea class="cmd-textarea" id="cmd-time-1">{"cmd": "set", "bin": 1, "time": 4000}</textarea>
-          <button class="btn-send" onclick="guiLenh('cmd-time-1')">Gửi</button>
+        <div class="cfg-section-title">⏱️ Thời Gian Mở (ms)</div>
+        <div class="input-row">
+          <span class="input-label">Thùng 1</span>
+          <div class="input-group">
+            <input class="num-input" type="number" id="time-1" value="4000" min="0" max="10000" style="width:90px">
+            <label>ms</label>
+          </div>
+          <button class="btn-send" onclick="guiTime(1)">Gửi</button>
         </div>
-        <div class="cmd-row">
-          <span class="cmd-label">Thùng 2</span>
-          <textarea class="cmd-textarea" id="cmd-time-2">{"cmd": "set", "bin": 2, "time": 4000}</textarea>
-          <button class="btn-send" onclick="guiLenh('cmd-time-2')">Gửi</button>
+        <div class="input-row">
+          <span class="input-label">Thùng 2</span>
+          <div class="input-group">
+            <input class="num-input" type="number" id="time-2" value="4000" min="0" max="10000" style="width:90px">
+            <label>ms</label>
+          </div>
+          <button class="btn-send" onclick="guiTime(2)">Gửi</button>
         </div>
-        <div class="cmd-row">
-          <span class="cmd-label">Thùng 3</span>
-          <textarea class="cmd-textarea" id="cmd-time-3">{"cmd": "set", "bin": 3, "time": 4000}</textarea>
-          <button class="btn-send" onclick="guiLenh('cmd-time-3')">Gửi</button>
+        <div class="input-row">
+          <span class="input-label">Thùng 3</span>
+          <div class="input-group">
+            <input class="num-input" type="number" id="time-3" value="4000" min="0" max="10000" style="width:90px">
+            <label>ms</label>
+          </div>
+          <button class="btn-send" onclick="guiTime(3)">Gửi</button>
         </div>
+      </div>
+
+      <!-- Reset thống kê -->
+      <div class="cfg-section">
+        <div class="cfg-section-title">🔄 Thống Kê</div>
+        <button class="btn-cmd orange" style="width:100%;padding:14px;font-size:1rem;" onclick="resetThongKe()">
+          🗑️ Reset Thống Kê về 0
+        </button>
       </div>
 
       <!-- Custom command -->
-      <div class="cfg-section custom-editor">
+      <div class="cfg-section">
         <div class="cfg-section-title">✏️ Lệnh Tuỳ Chỉnh</div>
-        <div class="cmd-row">
-          <textarea class="cmd-textarea" id="cmd-custom" placeholder='Nhập JSON, VD: {"cmd": "beep"}'></textarea>
-          <button class="btn-send" onclick="guiLenh('cmd-custom')">Gửi</button>
+        <textarea class="cmd-textarea" id="cmd-custom" placeholder='Nhập JSON, VD: {"cmd": "beep"}'></textarea>
+        <div class="custom-send-row">
+          <button class="btn-send" onclick="guiCustom()">Gửi</button>
         </div>
-        <!-- Log -->
         <div class="cfg-log" id="cfg-log"><span style="color:#555">— Log lệnh sẽ hiện ở đây —</span></div>
       </div>
 
@@ -697,34 +835,45 @@ TRANG_WEB = """
 
   /* ========= TRANG CHỦ ========= */
   let dangQuet = false;
+  let scanTimer = null;
 
-  function toggleScan() {
-    const btn = document.getElementById('btn-scan');
-    const overlay = document.getElementById('scan-overlay');
-    if (!dangQuet) {
-      fetch('/bat_dau_quet', { method: 'POST' })
-        .then(r => r.json())
-        .then(data => {
-          dangQuet = true;
-          btn.textContent = '⏹ Đang Quét... (Bấm để dừng)';
-          btn.classList.add('scanning');
-          overlay.style.display = 'block';
-          hienThongBao(data.thong_bao, '#2196F3');
-        })
-        .catch(() => hienThongBao('❌ Lỗi kết nối', '#f44336'));
-    } else {
-      fetch('/ket_thuc_quet', { method: 'POST' })
-        .then(r => r.json())
-        .then(data => { ketThucScan(); hienThongBao(data.thong_bao, '#FF9800'); })
-        .catch(() => ketThucScan());
-    }
+  function batDauScan() {
+    if (dangQuet) return;
+    fetch('/bat_dau_quet', { method: 'POST' })
+      .then(r => r.json())
+      .then(data => {
+        dangQuet = true;
+        const btn = document.getElementById('btn-scan');
+        const overlay = document.getElementById('scan-overlay');
+        btn.disabled = true;
+        btn.classList.add('scanning');
+        overlay.style.display = 'block';
+        hienThongBao(data.thong_bao, '#2196F3');
+
+        // Countdown on button
+        let dem = 2;
+        btn.textContent = `⏳ Đang quét... ${dem}s`;
+        scanTimer = setInterval(() => {
+          dem--;
+          if (dem > 0) {
+            btn.textContent = `⏳ Đang quét... ${dem}s`;
+          } else {
+            btn.textContent = '🔄 Đang xử lý...';
+            clearInterval(scanTimer);
+            scanTimer = null;
+          }
+        }, 1000);
+      })
+      .catch(() => hienThongBao('❌ Lỗi kết nối', '#f44336'));
   }
 
   function ketThucScan() {
     dangQuet = false;
+    if (scanTimer) { clearInterval(scanTimer); scanTimer = null; }
     const btn = document.getElementById('btn-scan');
     btn.textContent = '📷 Bắt Đầu Quét Rác';
     btn.classList.remove('scanning');
+    btn.disabled = false;
     document.getElementById('scan-overlay').style.display = 'none';
   }
 
@@ -741,7 +890,7 @@ TRANG_WEB = """
         if (dangQuet && !data.dang_quet) {
           ketThucScan();
           if (data.thung !== 0) {
-            const ten = {1:'Hữu Cơ', 2:'Rác Nhựa', 3:'Tái Chế'}[data.thung] || '';
+            const ten = {1:'Vô Cơ', 2:'Hữu Cơ', 3:'Undetermined'}[data.thung] || '';
             hienThongBao(`✅ Đã nhận diện: ${data.nhan} → Mở Thùng ${data.thung} (${ten})`, '#4CAF50');
           }
         }
@@ -765,12 +914,31 @@ TRANG_WEB = """
   }
 
   /* ========= CẤU HÌNH – Gửi lệnh ========= */
-  function guiLenh(id) {
-    const ta  = document.getElementById(id);
-    const btn = ta.closest('.cmd-row').querySelector('.btn-send');
-    const raw = ta.value.trim();
+  function guiCmd(cmdObj) {
+    fetch('/gui_lenh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cmdObj)
+    })
+    .then(r => r.json())
+    .then(() => logCfg(`✅ Đã gửi: ${JSON.stringify(cmdObj)}`, 'log-ok'))
+    .catch(err => logCfg(`❌ Lỗi: ${err}`, 'log-err'));
+  }
 
-    // Validate JSON
+  function guiServo(bin) {
+    const open  = parseInt(document.getElementById('open-'  + bin).value);
+    const close = parseInt(document.getElementById('close-' + bin).value);
+    guiCmd({ cmd: 'set', bin: bin, open: open, close: close });
+  }
+
+  function guiTime(bin) {
+    const t = parseInt(document.getElementById('time-' + bin).value);
+    guiCmd({ cmd: 'set', bin: bin, time: t });
+  }
+
+  function guiCustom() {
+    const ta  = document.getElementById('cmd-custom');
+    const raw = ta.value.trim();
     let parsed;
     try {
       parsed = JSON.parse(raw);
@@ -780,26 +948,7 @@ TRANG_WEB = """
       logCfg(`❌ JSON không hợp lệ: ${e.message}`, 'log-err');
       return;
     }
-
-    btn.textContent = '...';
-    btn.classList.add('sending');
-
-    fetch('/gui_lenh', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(parsed)
-    })
-    .then(r => r.json())
-    .then(data => {
-      logCfg(`✅ Đã gửi: ${raw}`, 'log-ok');
-      btn.textContent = '✓';
-      setTimeout(() => { btn.textContent = 'Gửi'; btn.classList.remove('sending'); }, 1200);
-    })
-    .catch(err => {
-      logCfg(`❌ Lỗi gửi: ${err}`, 'log-err');
-      btn.textContent = 'Gửi';
-      btn.classList.remove('sending');
-    });
+    guiCmd(parsed);
   }
 
   function logCfg(msg, cls) {
@@ -814,8 +963,40 @@ TRANG_WEB = """
     while (log.children.length > 60) log.removeChild(log.firstChild);
   }
 
+  function capNhatThongKe() {
+    fetch('/thong_ke')
+      .then(r => r.json())
+      .then(d => {
+        const tong = d.tong || 0;
+        document.getElementById('stat-total').textContent = `Tổng: ${tong} lần`;
+        const items = [
+          { id: 'voco',  val: d['Vo Co']       || 0 },
+          { id: 'huuco', val: d['Huu Co']       || 0 },
+          { id: 'other', val: d['Undetermined'] || 0 },
+        ];
+        items.forEach(({id, val}) => {
+          const pct = tong > 0 ? (val / tong * 100).toFixed(1) : 0;
+          document.getElementById('cnt-' + id).textContent = val;
+          document.getElementById('bar-' + id).style.width  = pct + '%';
+          document.getElementById('pct-' + id).textContent  = pct + '%';
+        });
+      });
+  }
+
+  function resetThongKe() {
+    if (!confirm('Reset toàn bộ thống kê về 0?')) return;
+    fetch('/reset_thong_ke', { method: 'POST' })
+      .then(r => r.json())
+      .then(() => {
+        capNhatThongKe();
+        logCfg('✅ Đã reset thống kê', 'log-ok');
+      });
+  }
+
   setInterval(capNhatKetQua, 1000);
+  setInterval(capNhatThongKe, 3000);
   capNhatKetQua();
+  capNhatThongKe();
 </script>
 </body>
 </html>
@@ -859,12 +1040,13 @@ def lay_ket_qua():
 
 @app.route('/bat_dau_quet', methods=['POST'])
 def bat_dau_quet():
-    """Bắt đầu chế độ quét: LED sáng + beep, AI sẽ tự nhận diện và mở thùng"""
-    global scan_mode
+    """Bắt đầu chế độ quét: LED sáng + beep, sau 2 giây lấy frame cuối để quyết định"""
+    global scan_mode, scan_start_time
     with scan_lock:
         scan_mode = True
+        scan_start_time = time.time()
     arduino_scan_start()
-    return jsonify({"thong_bao": "📷 Bắt đầu quét – LED sáng, AI đang nhận diện..."})
+    return jsonify({"thong_bao": "📷 Bắt đầu quét – đang nhận diện trong 2 giây..."})
 
 @app.route('/ket_thuc_quet', methods=['POST'])
 def ket_thuc_quet():
@@ -878,11 +1060,25 @@ def ket_thuc_quet():
 @app.route('/mo_nap/<int:so>', methods=['POST', 'GET'])
 def mo_nap_thu_cong(so):
     """Mở nắp thủ công từ website"""
-    ten = {1: "Hữu Cơ", 2: "Rác Nhựa", 3: "Tái Chế"}.get(so, "?")
+    ten = {1: "Vô Cơ", 2: "Hữu Cơ", 3: "Undetermined"}.get(so, "?")
     if so in [1, 2, 3]:
         arduino_open_bin(so)
         return jsonify({"thong_bao": f"✅ Đã mở Thùng {so} – {ten}"})
     return jsonify({"thong_bao": "❌ Số thùng không hợp lệ"})
+
+@app.route('/thong_ke')
+def lay_thong_ke():
+    with thong_ke_lock:
+        data = dict(thong_ke)
+    data["tong"] = sum(data.values())
+    return jsonify(data)
+
+@app.route('/reset_thong_ke', methods=['POST'])
+def reset_thong_ke():
+    with thong_ke_lock:
+        for key in thong_ke:
+            thong_ke[key] = 0
+    return jsonify({"ok": True})
 
 @app.route('/gui_lenh', methods=['POST'])
 def gui_lenh_raw():
