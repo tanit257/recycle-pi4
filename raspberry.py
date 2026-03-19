@@ -33,7 +33,7 @@ ARDUINO_PORTS = ['/dev/ttyUSB0', '/dev/ttyUSB1', '/dev/ttyACM0', '/dev/ttyACM1']
 ARDUINO_BAUD  = 115200
 
 # Danh sách chỉ số camera sẽ thử lần lượt
-CAMERA_INDEXES = [0, 1, 2, 3]
+CAMERA_INDEXES = [0, 1, 2]
 
 # Độ tin cậy tối thiểu để kích hoạt mở nắp (80%)
 NGUONG_TIN_CAY = 0.80
@@ -68,9 +68,9 @@ MODEL_SIZE = (224, 224)
 # ---------------------------------------------------------------
 # Góc servo và thời gian mở cho mỗi thùng (bin 1, 2, 3)
 SERVO_CONFIG = {
-    1: {"open": 120, "close": 5, "time": 4000},
-    2: {"open": 120, "close": 5, "time": 4000},
-    3: {"open": 120, "close": 5, "time": 4000},
+    1: {"open": 5, "close": 55, "time": 4000},
+    2: {"open": 5, "close": 55, "time": 4000},
+    3: {"open": 5, "close": 55, "time": 4000},
 }
 
 # ---------------------------------------------------------------
@@ -147,7 +147,7 @@ def gui_lenh_arduino(cmd_dict: dict):
         ser = arduino
     if ser and ser.is_open:
         try:
-            json_str = json.dumps(cmd_dict) + '\n'
+            json_str = json.dumps(cmd_dict, separators=(',', ':')) + '\n'
             ser.write(json_str.encode())
             print(f"📡 Gửi Arduino [{arduino_port_dang_dung}]: {json_str.strip()}")
         except Exception as e:
@@ -199,7 +199,7 @@ def tim_camera():
                 return cap
         cap.release()
     print("⚠️  Không tìm thấy camera nào – sẽ thử lại khi đọc frame")
-    return cv2.VideoCapture(-1)  # dummy, isOpened() = False
+    return None
 
 camera = tim_camera()
 
@@ -253,6 +253,10 @@ def vong_lap_camera():
 
     while True:
         try:
+            if camera is None:
+                time.sleep(2)
+                camera = tim_camera()
+                continue
             ret, frame = camera.read()
 
             # Đọc trạng thái scan TRƯỚC khi xử lý camera
@@ -295,7 +299,10 @@ def vong_lap_camera():
             # Nếu camera lỗi thì bỏ qua phần xử lý hình ảnh
             if not ret:
                 print("⚠️  Camera mất kết nối – đang tìm lại...")
-                camera.release()
+                try:
+                    camera.release()
+                except Exception:
+                    pass
                 time.sleep(2)
                 camera = tim_camera()
                 continue
@@ -951,7 +958,13 @@ TRANG_WEB = """
       body: JSON.stringify(cmdObj)
     })
     .then(r => r.json())
-    .then(() => logCfg(`✅ Đã gửi: ${JSON.stringify(cmdObj)}`, 'log-ok'))
+    .then(data => {
+      if (data.ok) {
+        logCfg(`✅ Đã gửi: ${JSON.stringify(cmdObj)}`, 'log-ok');
+      } else {
+        logCfg(`❌ ${data.error || 'Lỗi không xác định'}: ${JSON.stringify(cmdObj)}`, 'log-err');
+      }
+    })
     .catch(err => logCfg(`❌ Lỗi: ${err}`, 'log-err'));
   }
 
@@ -1058,10 +1071,25 @@ TRANG_WEB = """
       });
   }
 
+  function taiCauHinhServo() {
+    fetch('/servo_config')
+      .then(r => r.json())
+      .then(cfg => {
+        [1, 2, 3].forEach(bin => {
+          if (cfg[bin]) {
+            document.getElementById('open-'  + bin).value = cfg[bin].open;
+            document.getElementById('close-' + bin).value = cfg[bin].close;
+            document.getElementById('time-'  + bin).value = cfg[bin].time;
+          }
+        });
+      });
+  }
+
   setInterval(capNhatKetQua, 1000);
   setInterval(capNhatThongKe, 3000);
   capNhatKetQua();
   capNhatThongKe();
+  taiCauHinhServo();
 </script>
 </body>
 </html>
@@ -1145,12 +1173,27 @@ def reset_thong_ke():
             thong_ke[key] = 0
     return jsonify({"ok": True})
 
+@app.route('/servo_config')
+def lay_servo_config():
+    return jsonify(SERVO_CONFIG)
+
 @app.route('/gui_lenh', methods=['POST'])
 def gui_lenh_raw():
     """Nhận JSON tuỳ ý từ trang Cấu Hình và forward thẳng sang Arduino"""
     data = request.get_json(force=True, silent=True)
     if data is None:
         return jsonify({"ok": False, "error": "JSON không hợp lệ"}), 400
+    with arduino_lock:
+        connected = arduino is not None and arduino.is_open
+    if not connected:
+        return jsonify({"ok": False, "error": "⚠️ Arduino chưa kết nối"}), 503
+    # Mirror set commands into SERVO_CONFIG so angles survive reconnects
+    if data.get("cmd") == "set":
+        bin_num = data.get("bin")
+        if bin_num in SERVO_CONFIG:
+            if "open"  in data: SERVO_CONFIG[bin_num]["open"]  = data["open"]
+            if "close" in data: SERVO_CONFIG[bin_num]["close"] = data["close"]
+            if "time"  in data: SERVO_CONFIG[bin_num]["time"]  = data["time"]
     gui_lenh_arduino(data)
     return jsonify({"ok": True, "sent": data})
 
