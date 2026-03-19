@@ -218,7 +218,7 @@ scan_start_time = 0.0     # Thời điểm bắt đầu quét
 scan_lock       = threading.Lock()
 
 # Thống kê số lần phân loại
-thong_ke = {"Vo Co": 0, "Huu Co": 0, "Undetermined": 0}
+thong_ke = {"Vo Co": 0, "Huu Co": 0, "Khong Xac Dinh": 0, "Undetermined": 0}
 thong_ke_lock = threading.Lock()
 
 def tien_xu_ly_anh(frame):
@@ -240,8 +240,9 @@ def nhan_dien_rac(frame):
 
     # Map nhãn → số thùng (int để gửi JSON)
     map_thung = {
-        'Vo Co':  1,
-        'Huu Co': 2,
+        'Vo Co':          1,
+        'Huu Co':         2,
+        'Khong Xac Dinh': 3,
     }
     so_thung = map_thung.get(nhan, 0)
     return nhan, do_tin_cay, so_thung
@@ -1015,7 +1016,7 @@ TRANG_WEB = """
         const items = [
           { id: 'voco',  val: d['Vo Co']       || 0 },
           { id: 'huuco', val: d['Huu Co']       || 0 },
-          { id: 'other', val: d['Undetermined'] || 0 },
+          { id: 'other', val: (d['Khong Xac Dinh'] || 0) + (d['Undetermined'] || 0) },
         ];
         items.forEach(({id, val}) => {
           const pct = tong > 0 ? (val / tong * 100).toFixed(1) : 0;
