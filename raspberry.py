@@ -811,6 +811,15 @@ TRANG_WEB = """
         </button>
       </div>
 
+      <!-- Pull Code -->
+      <div class="cfg-section">
+        <div class="cfg-section-title">🔄 Cập Nhật Code</div>
+        <button class="btn-cmd blue" id="btn-pull" style="width:100%;padding:14px;font-size:1rem;" onclick="pullCode()">
+          ⬇️ Pull Code Mới Nhất & Restart
+        </button>
+        <div id="pull-log" style="margin-top:10px;background:#0f0f23;border-radius:8px;padding:10px;font-family:monospace;font-size:0.8rem;color:#aaa;display:none;white-space:pre-wrap;word-break:break-all;"></div>
+      </div>
+
       <!-- Custom command -->
       <div class="cfg-section">
         <div class="cfg-section-title">✏️ Lệnh Tuỳ Chỉnh</div>
@@ -993,6 +1002,41 @@ TRANG_WEB = """
       });
   }
 
+  function pullCode() {
+    if (!confirm('Pull code mới nhất từ GitHub và restart hệ thống?')) return;
+    const btn = document.getElementById('btn-pull');
+    const log = document.getElementById('pull-log');
+    btn.disabled = true;
+    btn.textContent = '⏳ Đang pull...';
+    log.style.display = 'block';
+    log.textContent = 'Đang kết nối GitHub...';
+    fetch('/pull_and_restart', { method: 'POST' })
+      .then(r => r.json())
+      .then(data => {
+        log.textContent = data.message;
+        log.style.color = data.ok ? '#4CAF50' : '#f44336';
+        if (data.ok) {
+          btn.textContent = '🔄 Đang restart... (chờ ~10s)';
+          setTimeout(() => {
+            btn.disabled = false;
+            btn.textContent = '⬇️ Pull Code Mới Nhất & Restart';
+          }, 12000);
+        } else {
+          btn.disabled = false;
+          btn.textContent = '⬇️ Pull Code Mới Nhất & Restart';
+        }
+      })
+      .catch(() => {
+        log.textContent = '❌ Mất kết nối (có thể đang restart...)';
+        log.style.color = '#FF9800';
+        btn.textContent = '🔄 Đang restart... (chờ ~10s)';
+        setTimeout(() => {
+          btn.disabled = false;
+          btn.textContent = '⬇️ Pull Code Mới Nhất & Restart';
+        }, 12000);
+      });
+  }
+
   setInterval(capNhatKetQua, 1000);
   setInterval(capNhatThongKe, 3000);
   capNhatKetQua();
@@ -1088,6 +1132,31 @@ def gui_lenh_raw():
         return jsonify({"ok": False, "error": "JSON không hợp lệ"}), 400
     gui_lenh_arduino(data)
     return jsonify({"ok": True, "sent": data})
+
+@app.route('/pull_and_restart', methods=['POST'])
+def pull_and_restart():
+    """Pull code mới nhất từ GitHub rồi restart service"""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ['git', '-C', BASE_DIR, 'pull', 'origin', 'main'],
+            capture_output=True, text=True, timeout=30
+        )
+        git_output = result.stdout.strip() + result.stderr.strip()
+        if result.returncode != 0:
+            return jsonify({"ok": False, "message": f"Git pull lỗi: {git_output}"})
+
+        # Restart service sau 1 giây (để Flask kịp trả response về client)
+        def do_restart():
+            time.sleep(1)
+            subprocess.run(['sudo', 'systemctl', 'restart', 'thungrac'])
+        threading.Thread(target=do_restart, daemon=True).start()
+
+        return jsonify({"ok": True, "message": f"✅ Pull thành công!\n{git_output}\n🔄 Đang restart..."})
+    except subprocess.TimeoutExpired:
+        return jsonify({"ok": False, "message": "❌ Git pull timeout (>30s)"})
+    except Exception as e:
+        return jsonify({"ok": False, "message": f"❌ Lỗi: {str(e)}"})
 
 # ---------------------------------------------------------------
 # 🚀  KHỞI ĐỘNG CHƯƠNG TRÌNH
