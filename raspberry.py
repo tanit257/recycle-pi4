@@ -32,8 +32,8 @@ from flask import Flask, Response, render_template_string, jsonify, request
 ARDUINO_PORTS = ['/dev/ttyUSB0', '/dev/ttyUSB1', '/dev/ttyACM0', '/dev/ttyACM1']
 ARDUINO_BAUD  = 115200
 
-# Chỉ số camera (0 = camera mặc định, 1 = camera ngoài)
-CAMERA_INDEX = 0
+# Danh sách chỉ số camera sẽ thử lần lượt
+CAMERA_INDEXES = [0, 1, 2, 3]
 
 # Độ tin cậy tối thiểu để kích hoạt mở nắp (80%)
 NGUONG_TIN_CAY = 0.80
@@ -188,7 +188,20 @@ def arduino_set_bin(bin_num: int, open_angle=None, close_angle=None, time_ms=Non
 # ---------------------------------------------------------------
 # 📷  XỬ LÝ CAMERA & NHẬN DIỆN AI
 # ---------------------------------------------------------------
-camera = cv2.VideoCapture(CAMERA_INDEX)
+def tim_camera():
+    """Thử lần lượt từng index trong CAMERA_INDEXES, trả về VideoCapture đầu tiên mở được"""
+    for idx in CAMERA_INDEXES:
+        cap = cv2.VideoCapture(idx)
+        if cap.isOpened():
+            ret, _ = cap.read()
+            if ret:
+                print(f"📷 Tìm thấy camera tại index {idx}")
+                return cap
+        cap.release()
+    print("⚠️  Không tìm thấy camera nào – sẽ thử lại khi đọc frame")
+    return cv2.VideoCapture(-1)  # dummy, isOpened() = False
+
+camera = tim_camera()
 
 # Biến dùng chung giữa các thread
 ket_qua_hien_tai = {
@@ -223,7 +236,7 @@ def nhan_dien_rac(frame):
 
     idx_cao_nhat = int(np.argmax(ket_qua))
     do_tin_cay   = float(ket_qua[idx_cao_nhat])
-    nhan         = NHAN_RAC[idx_cao_nhat]
+    nhan         = NHAN_RAC[idx_cao_nhat] if idx_cao_nhat < len(NHAN_RAC) else "Undetermined"
 
     # Map nhãn → số thùng (int để gửi JSON)
     map_thung = {
@@ -235,80 +248,88 @@ def nhan_dien_rac(frame):
 
 def vong_lap_camera():
     """Thread chạy nền: liên tục đọc camera, nhận diện AI khi đang scan"""
-    global scan_mode
+    global scan_mode, camera
     da_xu_ly = False   # Tránh mở thùng nhiều lần trong 1 lần quét
 
     while True:
-        ret, frame = camera.read()
+        try:
+            ret, frame = camera.read()
 
-        # Đọc trạng thái scan TRƯỚC khi xử lý camera
-        with scan_lock:
-            dang_quet = scan_mode
-            thoi_gian_bat_dau = scan_start_time
-
-        now = time.time()
-
-        # Sau 2 giây → quyết định dựa trên kết quả AI mới nhất (dù camera có lỗi hay không)
-        if dang_quet and not da_xu_ly and (now - thoi_gian_bat_dau) >= 2.0:
-            da_xu_ly = True
-            with lock:
-                nhan_cu      = ket_qua_hien_tai["nhan"]
-                do_tin_cay_cu = ket_qua_hien_tai["do_tin_cay"]
-                so_thung_cu  = ket_qua_hien_tai["thung"]
-
-            if do_tin_cay_cu >= NGUONG_TIN_CAY and so_thung_cu != 0:
-                bin_mo  = so_thung_cu
-                ten_rac = nhan_cu
-            else:
-                bin_mo  = 3   # Undetermined
-                ten_rac = "Undetermined"
-                with lock:
-                    ket_qua_hien_tai["nhan"]  = "Undetermined"
-                    ket_qua_hien_tai["thung"] = 3
-
-            arduino_open_bin(bin_mo)
+            # Đọc trạng thái scan TRƯỚC khi xử lý camera
             with scan_lock:
-                scan_mode = False
-            arduino_scan_end()
-            with thong_ke_lock:
-                thong_ke[ten_rac] = thong_ke.get(ten_rac, 0) + 1
-            print(f"✅ Kết quả: {ten_rac} ({do_tin_cay_cu*100:.1f}%) → Mở Thùng {bin_mo}")
+                dang_quet = scan_mode
+                thoi_gian_bat_dau = scan_start_time
 
-        # Reset cờ khi scan kết thúc
-        if not dang_quet:
-            da_xu_ly = False
+            now = time.time()
 
-        # Nếu camera lỗi thì bỏ qua phần xử lý hình ảnh
-        if not ret:
-            time.sleep(0.5)
-            continue
+            # Sau 2 giây → quyết định dựa trên kết quả AI mới nhất (dù camera có lỗi hay không)
+            if dang_quet and not da_xu_ly and (now - thoi_gian_bat_dau) >= 2.0:
+                da_xu_ly = True
+                with lock:
+                    nhan_cu      = ket_qua_hien_tai["nhan"]
+                    do_tin_cay_cu = ket_qua_hien_tai["do_tin_cay"]
+                    so_thung_cu  = ket_qua_hien_tai["thung"]
 
-        # Nhận diện AI
-        nhan, do_tin_cay, so_thung = nhan_dien_rac(frame)
+                if do_tin_cay_cu >= NGUONG_TIN_CAY and so_thung_cu != 0:
+                    bin_mo  = so_thung_cu
+                    ten_rac = nhan_cu
+                else:
+                    bin_mo  = 3   # Undetermined
+                    ten_rac = "Undetermined"
+                    with lock:
+                        ket_qua_hien_tai["nhan"]  = "Undetermined"
+                        ket_qua_hien_tai["thung"] = 3
 
-        # Vẽ kết quả lên ảnh
-        mau = (0, 255, 0) if do_tin_cay >= NGUONG_TIN_CAY else (0, 165, 255)
-        cv2.putText(frame,
-                    f"{nhan}: {do_tin_cay*100:.1f}%",
-                    (10, 40), cv2.FONT_HERSHEY_SIMPLEX,
-                    1.2, mau, 3)
-        cv2.putText(frame,
-                    f"Thung: {so_thung}" if so_thung != 0 else "Undetermined",
-                    (10, 90), cv2.FONT_HERSHEY_SIMPLEX,
-                    1.0, mau, 2)
+                arduino_open_bin(bin_mo)
+                with scan_lock:
+                    scan_mode = False
+                arduino_scan_end()
+                with thong_ke_lock:
+                    thong_ke[ten_rac] = thong_ke.get(ten_rac, 0) + 1
+                print(f"✅ Kết quả: {ten_rac} ({do_tin_cay_cu*100:.1f}%) → Mở Thùng {bin_mo}")
 
-        if dang_quet:
-            con_lai = max(0.0, 2.0 - (now - thoi_gian_bat_dau))
-            cv2.putText(frame, f"DANG QUET... {con_lai:.1f}s", (10, 140),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+            # Reset cờ khi scan kết thúc
+            if not dang_quet:
+                da_xu_ly = False
 
-        with lock:
-            ket_qua_hien_tai["nhan"]       = nhan
-            ket_qua_hien_tai["do_tin_cay"] = do_tin_cay
-            ket_qua_hien_tai["thung"]      = so_thung
-            ket_qua_hien_tai["frame"]      = frame.copy()
+            # Nếu camera lỗi thì bỏ qua phần xử lý hình ảnh
+            if not ret:
+                print("⚠️  Camera mất kết nối – đang tìm lại...")
+                camera.release()
+                time.sleep(2)
+                camera = tim_camera()
+                continue
 
-        time.sleep(0.1)
+            # Nhận diện AI
+            nhan, do_tin_cay, so_thung = nhan_dien_rac(frame)
+
+            # Vẽ kết quả lên ảnh
+            mau = (0, 255, 0) if do_tin_cay >= NGUONG_TIN_CAY else (0, 165, 255)
+            cv2.putText(frame,
+                        f"{nhan}: {do_tin_cay*100:.1f}%",
+                        (10, 40), cv2.FONT_HERSHEY_SIMPLEX,
+                        1.2, mau, 3)
+            cv2.putText(frame,
+                        f"Thung: {so_thung}" if so_thung != 0 else "Undetermined",
+                        (10, 90), cv2.FONT_HERSHEY_SIMPLEX,
+                        1.0, mau, 2)
+
+            if dang_quet:
+                con_lai = max(0.0, 2.0 - (now - thoi_gian_bat_dau))
+                cv2.putText(frame, f"DANG QUET... {con_lai:.1f}s", (10, 140),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+
+            with lock:
+                ket_qua_hien_tai["nhan"]       = nhan
+                ket_qua_hien_tai["do_tin_cay"] = do_tin_cay
+                ket_qua_hien_tai["thung"]      = so_thung
+                ket_qua_hien_tai["frame"]      = frame.copy()
+
+            time.sleep(0.1)
+
+        except Exception as e:
+            print(f"⚠️  Lỗi camera thread: {e} – thử lại sau 1 giây...")
+            time.sleep(1)
 
 # ---------------------------------------------------------------
 # 🌐  WEB SERVER (Flask)
