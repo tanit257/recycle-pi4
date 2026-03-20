@@ -309,10 +309,10 @@ def vong_lap_camera():
                             ket_qua_hien_tai["nhan"]  = "Undetermined"
                             ket_qua_hien_tai["thung"] = 3
 
-                    arduino_open_bin(bin_mo)
                     with scan_lock:
                         scan_mode = False
                     arduino_scan_end()
+                    arduino_open_bin(bin_mo)
                     with thong_ke_lock:
                         thong_ke[ten_rac] = thong_ke.get(ten_rac, 0) + 1
                     print(f"✅ Kết quả: {ten_rac} ({do_tin_cay_cu*100:.1f}%) → Mở Thùng {bin_mo}")
