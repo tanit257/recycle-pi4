@@ -22,7 +22,7 @@ unsigned long lastBeep = 0;
 String buffer = "";
 
 // config cho từng bin
-int openAngle[3]  = {90, 90, 90};
+int openAngle[3]  = {35, 35, 35};
 int closeAngle[3] = {0,  0,  0};
 int openTime[3]   = {3000, 3000, 3000};
 

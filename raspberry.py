@@ -68,9 +68,9 @@ MODEL_SIZE = (224, 224)
 # ---------------------------------------------------------------
 # Góc servo và thời gian mở cho mỗi thùng (bin 1, 2, 3)
 SERVO_CONFIG = {
-    1: {"open": 5, "close": 55, "time": 4000},
-    2: {"open": 5, "close": 55, "time": 4000},
-    3: {"open": 5, "close": 55, "time": 4000},
+    1: {"open": 35, "close": 0, "time": 4000},
+    2: {"open": 35, "close": 0, "time": 4000},
+    3: {"open": 35, "close": 0, "time": 4000},
 }
 
 # ---------------------------------------------------------------
@@ -802,9 +802,9 @@ TRANG_WEB = """
           <span class="input-label">Thùng 1</span>
           <div class="input-group">
             <label>Open</label>
-            <input class="num-input" type="number" id="open-1" value="120" min="0" max="180">
+            <input class="num-input" type="number" id="open-1" value="35" min="0" max="180">
             <label>Close</label>
-            <input class="num-input" type="number" id="close-1" value="5" min="0" max="180">
+            <input class="num-input" type="number" id="close-1" value="0" min="0" max="180">
           </div>
           <button class="btn-send" onclick="guiServo(1)">Gửi</button>
         </div>
@@ -812,9 +812,9 @@ TRANG_WEB = """
           <span class="input-label">Thùng 2</span>
           <div class="input-group">
             <label>Open</label>
-            <input class="num-input" type="number" id="open-2" value="120" min="0" max="180">
+            <input class="num-input" type="number" id="open-2" value="35" min="0" max="180">
             <label>Close</label>
-            <input class="num-input" type="number" id="close-2" value="5" min="0" max="180">
+            <input class="num-input" type="number" id="close-2" value="0" min="0" max="180">
           </div>
           <button class="btn-send" onclick="guiServo(2)">Gửi</button>
         </div>
@@ -822,9 +822,9 @@ TRANG_WEB = """
           <span class="input-label">Thùng 3</span>
           <div class="input-group">
             <label>Open</label>
-            <input class="num-input" type="number" id="open-3" value="120" min="0" max="180">
+            <input class="num-input" type="number" id="open-3" value="35" min="0" max="180">
             <label>Close</label>
-            <input class="num-input" type="number" id="close-3" value="5" min="0" max="180">
+            <input class="num-input" type="number" id="close-3" value="0" min="0" max="180">
           </div>
           <button class="btn-send" onclick="guiServo(3)">Gửi</button>
         </div>
