@@ -73,6 +73,14 @@ SERVO_CONFIG = {
     3: {"open": 35, "close": 0, "time": 4000},
 }
 
+# Remap logical bin → physical servo index trên Arduino
+# (do servo được đấu dây lệch so với thứ tự logic)
+BIN_MAP = {
+    1: 3,   # Vô Cơ      → physical servo 3
+    2: 1,   # Hữu Cơ     → physical servo 1
+    3: 2,   # Undetermined → physical servo 2
+}
+
 # ---------------------------------------------------------------
 # 🔌  KẾT NỐI ARDUINO
 # ---------------------------------------------------------------
@@ -167,8 +175,9 @@ def arduino_scan_end():
     gui_lenh_arduino({"cmd": "scan_end"})
 
 def arduino_open_bin(bin_num: int):
-    """Mở nắp thùng số bin_num"""
-    gui_lenh_arduino({"cmd": "open_bin", "bin": bin_num})
+    """Mở nắp thùng số bin_num (tự động remap sang physical servo)"""
+    physical = BIN_MAP.get(bin_num, bin_num)
+    gui_lenh_arduino({"cmd": "open_bin", "bin": physical})
 
 def arduino_beep():
     """Phát tiếng beep"""
@@ -527,15 +536,15 @@ TRANG_WEB = """
       border: 2px solid transparent;
       transition: border-color 0.3s;
     }
-    .stat-card.voco   { border-color: #4CAF50; }
-    .stat-card.huuco  { border-color: #2196F3; }
-    .stat-card.other  { border-color: #FF9800; }
+    .stat-card.voco   { border-color: #FFC107; }
+    .stat-card.huuco  { border-color: #4CAF50; }
+    .stat-card.other  { border-color: #e0e0e0; }
     .stat-icon  { font-size: 1.6rem; margin-bottom: 4px; }
     .stat-label { font-size: 0.7rem; color: #aaa; margin-bottom: 8px; }
     .stat-count { font-size: 2rem; font-weight: bold; line-height: 1; margin-bottom: 6px; }
-    .stat-card.voco  .stat-count { color: #4CAF50; }
-    .stat-card.huuco .stat-count { color: #2196F3; }
-    .stat-card.other .stat-count { color: #FF9800; }
+    .stat-card.voco  .stat-count { color: #FFC107; }
+    .stat-card.huuco .stat-count { color: #4CAF50; }
+    .stat-card.other .stat-count { color: #e0e0e0; }
     .stat-bar-bg {
       background: #0f0f23;
       border-radius: 4px;
@@ -544,9 +553,9 @@ TRANG_WEB = """
       overflow: hidden;
     }
     .stat-bar { height: 100%; border-radius: 4px; transition: width 0.5s; width: 0%; }
-    .stat-card.voco  .stat-bar { background: #4CAF50; }
-    .stat-card.huuco .stat-bar { background: #2196F3; }
-    .stat-card.other .stat-bar { background: #FF9800; }
+    .stat-card.voco  .stat-bar { background: #FFC107; }
+    .stat-card.huuco .stat-bar { background: #4CAF50; }
+    .stat-card.other .stat-bar { background: #e0e0e0; }
     .stat-pct { font-size: 0.72rem; color: #888; }
     .trang-thai {
       text-align: center;
@@ -609,6 +618,10 @@ TRANG_WEB = """
     .btn-cmd.orange { background: #FF9800; }
     .btn-cmd.orange:active { background: #e65100; }
     .btn-cmd.ok { background: #43a047; }
+    .btn-cmd.yellow { background: #FFC107; color: #333; }
+    .btn-cmd.yellow:active { background: #f9a825; }
+    .btn-cmd.white  { background: #f5f5f5; color: #333; }
+    .btn-cmd.white:active  { background: #e0e0e0; }
     /* Input rows (Servo & Time) */
     .input-row {
       display: flex;
@@ -789,9 +802,9 @@ TRANG_WEB = """
       <div class="cfg-section">
         <div class="cfg-section-title">🗑️ Mở Thùng</div>
         <div class="btn-cmd-row">
-          <button class="btn-cmd"        onclick="guiCmd({cmd:'open_bin',bin:1})">🪨 Thùng 1<br><small>Vô Cơ</small></button>
-          <button class="btn-cmd blue"   onclick="guiCmd({cmd:'open_bin',bin:2})">🌿 Thùng 2<br><small>Hữu Cơ</small></button>
-          <button class="btn-cmd orange" onclick="guiCmd({cmd:'open_bin',bin:3})">❓ Thùng 3<br><small>Undetermined</small></button>
+          <button class="btn-cmd yellow" onclick="guiCmd({cmd:'open_bin',bin:1})">🪨 Thùng 1<br><small>Vô Cơ</small></button>
+          <button class="btn-cmd"       onclick="guiCmd({cmd:'open_bin',bin:2})">🌿 Thùng 2<br><small>Hữu Cơ</small></button>
+          <button class="btn-cmd white"  onclick="guiCmd({cmd:'open_bin',bin:3})">❓ Thùng 3<br><small>Undetermined</small></button>
         </div>
       </div>
 
@@ -1222,6 +1235,9 @@ def gui_lenh_raw():
         connected = arduino is not None and arduino.is_open
     if not connected:
         return jsonify({"ok": False, "error": "⚠️ Arduino chưa kết nối"}), 503
+    # Remap open_bin qua BIN_MAP giống như arduino_open_bin()
+    if data.get("cmd") == "open_bin" and "bin" in data:
+        data = dict(data, bin=BIN_MAP.get(data["bin"], data["bin"]))
     # Mirror set commands into SERVO_CONFIG so angles survive reconnects
     if data.get("cmd") == "set":
         bin_num = data.get("bin")
