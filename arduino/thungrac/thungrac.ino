@@ -68,6 +68,14 @@ int getBin(String cmd){
   return 0;
 }
 
+void smoothMove(Servo* s, int from, int to, int stepDelay){
+  if(from < to){
+    for(int a = from; a <= to; a++){ s->write(a); delay(stepDelay); }
+  } else {
+    for(int a = from; a >= to; a--){ s->write(a); delay(stepDelay); }
+  }
+}
+
 void openBin(int bin){
   Servo* s = getServo(bin);
   int pin  = getPin(bin);
@@ -76,11 +84,13 @@ void openBin(int bin){
   int index = bin - 1;
 
   s->attach(pin);
-  beep(120);
-  s->write(openAngle[index]);
-  delay(openTime[index]);
   s->write(closeAngle[index]);
-  delay(800);
+  delay(50);
+  beep(120);
+  smoothMove(s, closeAngle[index], openAngle[index], 15);
+  delay(openTime[index]);
+  smoothMove(s, openAngle[index], closeAngle[index], 15);
+  delay(300);
   s->detach();
 }
 
