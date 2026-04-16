@@ -22,7 +22,7 @@ unsigned long lastBeep = 0;
 String buffer = "";
 
 // config cho từng bin
-int openAngle[3]  = {35, 35, 35};
+int openAngle[3]  = {45, 45, 45};
 int closeAngle[3] = {0,  0,  0};
 int openTime[3]   = {3000, 3000, 3000};
 
@@ -87,9 +87,9 @@ void openBin(int bin){
   s->write(closeAngle[index]);
   delay(50);
   beep(120);
-  smoothMove(s, closeAngle[index], openAngle[index], 15);
+  smoothMove(s, closeAngle[index], openAngle[index], 8);
   delay(openTime[index]);
-  smoothMove(s, openAngle[index], closeAngle[index], 15);
+  smoothMove(s, openAngle[index], closeAngle[index], 8);
   delay(300);
   s->detach();
 }
